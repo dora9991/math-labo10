@@ -30,7 +30,7 @@ const AUTO_NEXT_MS = 750; // 正解時に次の問題へ移るまでの待ち時
 const ROUND_SIZE = 10;     // 1セット＝10問。解き終えると結果画面で区切る
 const POINT_PER_CORRECT = 10; // 1問正解の獲得ポイント（App側の付与XPと一致）
 
-export default function StepUp({ player, chapter, onAttempt, onHome, targetSkill = null }) {
+export default function StepUp({ player, chapter, onAttempt, onHome, targetSkill = null, onHaichi = null, onChallenge = null }) {
   // 習熟度はローカルにも持ち、出題選定はこれを見る（保存はApp側にも反映）
   const statsRef = useRef({ ...(player?.skillStats || {}) });
   const lastIdRef = useRef(null);
@@ -50,6 +50,7 @@ export default function StepUp({ player, chapter, onAttempt, onHome, targetSkill
   const [padKey, setPadKey] = useState(0);       // 問題が変わるたびに計算スペースを消す用
   const [showRing, setShowRing] = useState(false); // 正解の光る◯＋閃光（タイムアタックと同じ）
   const [shakeAns, setShakeAns] = useState(false); // 不正解の横揺れ（タイムアタックと同じ）
+  const [streak, setStreak] = useState(0); // 連続正誤（+連続正解/-連続不正解）。挑戦点灯・詰まり救済の表示に使う（§10 Step4）
 
   // ── 10問ごとの区切り（セット）──
   const [phase, setPhase] = useState("play");    // "play" | "result"
@@ -135,8 +136,9 @@ export default function StepUp({ player, chapter, onAttempt, onHome, targetSkill
     setSeen((s) => s + 1);
     if (ok) setGot((g) => g + 1);
     if (mNew > mOld + 0.001) setImproved((p) => ({ ...p, [skill]: true }));
+    setStreak(runRef.current); // 連続カウントを描画へ反映（挑戦点灯/詰まり救済）
     setMsg(ok ? voice("correct") : voice("wrong"));
-    setFb({ ok, ans: problem.ans, h1: problem.h1, skill, mOld, mNew });
+    setFb({ ok, ans: problem.ans, h1: problem.h1, h2: problem.h2, skill, mOld, mNew, stuck: runRef.current <= -2 });
 
     // このセットの集計を進める（メーター＆結果画面用）
     const r = roundRef.current;
@@ -188,6 +190,7 @@ export default function StepUp({ player, chapter, onAttempt, onHome, targetSkill
   function startRound() {
     roundRef.current = { n: 0, correct: 0, improved: new Set() };
     runRef.current = 0; // 連続カウントもリセット（新しいセットは難易度ニュートラルから）
+    setStreak(0);
     setDone(0);
     setResult(null);
     setPhase("play");
@@ -307,6 +310,10 @@ export default function StepUp({ player, chapter, onAttempt, onHome, targetSkill
           <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,.55)", minWidth: 0 }}>
             いま：{skillName(entry.skill)}・{LEVEL_LABEL[entry.level]}
           </span>
+          {/* θ超で「✨得意」点灯（得意→もっと：§10 Step4） */}
+          {curM >= THETA && (
+            <span style={{ fontSize: 10.5, fontWeight: 900, color: "#4ade80", background: "rgba(74,222,128,.15)", border: "1px solid rgba(74,222,128,.35)", borderRadius: 8, padding: "2px 7px", whiteSpace: "nowrap" }}>✨得意</span>
+          )}
         </div>
         <div style={{ height: 8, background: "rgba(255,255,255,.08)", borderRadius: 4, overflow: "hidden", marginBottom: 14 }}>
           <div style={{
@@ -315,6 +322,19 @@ export default function StepUp({ player, chapter, onAttempt, onHome, targetSkill
             transition: "width .5s ease",
           }} />
         </div>
+
+        {/* 絶好調（5連続正解〜）の得意な子に「もっと」の出口を点灯（§10 Step4） */}
+        {streak >= 5 && onChallenge && (
+          <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "0 0 12px", padding: "11px 13px", borderRadius: 12,
+            background: "rgba(74,222,128,.12)", border: "1.5px solid rgba(74,222,128,.5)" }}>
+            <span style={{ fontSize: 22 }}>🔥</span>
+            <div style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 800, color: "#86efac", lineHeight: 1.4 }}>
+              ぜっこうちょう！もっと手ごたえがほしい？
+            </div>
+            <button onClick={onChallenge} data-sfx="none" style={{ flexShrink: 0, padding: "8px 12px", borderRadius: 10, border: "none", cursor: "pointer",
+              fontSize: 12.5, fontWeight: 900, color: "#06281a", background: "#4ade80" }}>計算王に挑戦 →</button>
+          </div>
+        )}
 
         {/* 問題カード */}
         <div className="glass" style={{ padding: 20, textAlign: "center" }}>
@@ -363,6 +383,24 @@ export default function StepUp({ player, chapter, onAttempt, onHome, targetSkill
               )}
               {!fb.ok && fb.h1 && (
                 <div style={{ fontSize: 12, color: "rgba(255,255,255,.55)", marginBottom: 10 }}>💡 {fb.h1}</div>
+              )}
+              {/* 詰まり自動救済：2連続ミスで「戻って確認」を差し込む（苦手→できそう：§10 Step4）。難易度はselectorが既に自動で緩和。 */}
+              {!fb.ok && fb.stuck && (
+                <div style={{ textAlign: "left", margin: "0 0 10px", padding: "11px 12px", borderRadius: 12,
+                  background: "rgba(34,197,94,.10)", border: "1.5px solid rgba(34,197,94,.45)" }}>
+                  <div style={{ fontSize: 13, fontWeight: 900, color: "#86efac", marginBottom: 5 }}>🛟 ちょっと戻って確認しよう</div>
+                  <div style={{ fontSize: 11.5, color: "rgba(255,255,255,.65)", lineHeight: 1.5, marginBottom: (fb.h2 || onHaichi) ? 8 : 0 }}>
+                    むずかしさを下げたよ。あせらず、計算スペースに書いて1つずつでOK。
+                  </div>
+                  {fb.h2 && <div style={{ fontSize: 12, color: "rgba(255,255,255,.72)", marginBottom: onHaichi ? 8 : 0 }}>💡 {fb.h2}</div>}
+                  {onHaichi && (
+                    <button onClick={() => onHaichi(chapter.units.find((u) => u.id === entry.unitId))} data-sfx="none"
+                      style={{ width: "100%", padding: "10px", borderRadius: 10, border: "none", cursor: "pointer",
+                        fontSize: 13, fontWeight: 900, color: "#fff", background: "linear-gradient(135deg,#ef4444,#f59e0b)" }}>
+                      📺 この単元を動画で見る
+                    </button>
+                  )}
+                </div>
               )}
               {fb.ok ? (
                 <div style={{ fontSize: 12, color: "rgba(255,255,255,.5)", marginTop: 4 }}>

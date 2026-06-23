@@ -1311,6 +1311,8 @@ export default function App() {
           chapter={CHAPTERS[0]}
           onAttempt={recordStepAttempt}
           onHome={() => setScreen("home")}
+          onHaichi={(unit) => openHaichiStudio(unit, "stepUp")}
+          onChallenge={() => setScreen("calcKingPick")}
         />
       );
     }

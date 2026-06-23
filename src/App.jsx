@@ -9,7 +9,7 @@
 import { useState, useEffect, useRef, lazy, Suspense } from "react";
 import * as store from "./store/localStore.js"; // ★将来ここを supabase.js に差し替える
 import { makeRecord, makeMistake } from "./store/recordSchema.js";
-import { levelFromXp, xpForLevel, playerLevel, playerXp, timeAttackCrystal, RELEARN_XP_PER_CORRECT, RELEARN_CRYSTAL_EVERY, STEPUP_COIN_PER_CORRECT, RELEARN_COIN_PER_CORRECT } from "./engine/scoring.js";
+import { levelFromXp, xpForLevel, playerLevel, playerXp, timeAttackCrystal, RELEARN_XP_PER_CORRECT, RELEARN_CRYSTAL_EVERY, STEPUP_COIN_PER_CORRECT, RELEARN_COIN_PER_CORRECT, CYCLE_PRACTICE_TARGET, MASTER_CYCLE_COIN, MASTER_CYCLE_CRYSTAL, isCycleComplete, REST_CYCLES_SOFT, restMultiplier } from "./engine/scoring.js";
 import * as bgm from "./audio/bgm.js";
 import * as sfx from "./audio/sfx.js";
 
@@ -87,8 +87,9 @@ export default function App() {
   const [mode, setMode] = useState("timeAttack"); // どのモードで章選択に来たか
   // 選択中の学年＝現在いる「ワールド」。完全ワールド分離でレベル(atk/HP)もこの学年のもの。
   const [grade, setGrade] = useState(() => data.player.world || 1);
-  // ホームのメニュー系統："hub"=モード選択 / "game" / "learn"。前回選んだモードから始める（初回はハブ）。
-  const [homeMode, setHomeMode] = useState(() => data.player.lastMode || "hub");
+  // ホームのタブ："adventure"=ぼうけん(本線サイクル) / "reward"=ごほうび / "record"=きろく / "settings"=せってい。
+  // 毎回「本線(ぼうけん)」から始める＝飲まれの入口（ゲーム/学習の二択フォーク）を廃止（§10 Step2）。
+  const [homeMode, setHomeMode] = useState("adventure");
   const [prestigeAsk, setPrestigeAsk] = useState(false);    // 「もう一周」確認ダイアログ
   const [prestigeDone, setPrestigeDone] = useState(null);   // 周回開始の演出（何周目か）
   const [sel, setSel] = useState({ chapter: null, unit: null, level: null });
@@ -127,10 +128,9 @@ export default function App() {
     updatePlayer((p) => (p.world === w ? p : { ...p, world: w }));
   }
 
-  // ホームのモード（ゲーム／学習）を切り替え、選んだら次回起動用に lastMode を保存
+  // ホームのタブ切り替え（§10 Step2）。本線(ぼうけん)が既定なので保存は不要。
   function chooseHomeMode(m) {
     setHomeMode(m);
-    if (m === "game" || m === "learn") updatePlayer((p) => (p.lastMode === m ? p : { ...p, lastMode: m }));
   }
 
   // 他モード（学び直し／タイムアタック／あんしん）から、その単元に対応する
@@ -138,6 +138,12 @@ export default function App() {
   function openHaichiStudio(unit, ret) {
     const found = unit && findHaichiLessonForUnit(unit.id);
     if (!found) return; // 対応する動画が無ければ何もしない（ボタンは対応がある時だけ出す）
+    // 王道サイクルの①講義：その単元の動画を開いたら lecture 済みにする（§10 Step3）
+    if (unit?.id) updatePlayer((p) => {
+      const cyc = { ...(p.cycle || {}) };
+      cyc[unit.id] = { practiceN: 0, relearnN: 0, appliedN: 0, done: false, ...(cyc[unit.id] || {}), lecture: true };
+      return { ...p, cycle: cyc, cycleLast: unit.id };
+    });
     setHaichiStudio({ ...found, ret });
     setScreen("haichiStudio");
   }
@@ -162,7 +168,7 @@ export default function App() {
       return { ...p, stars, prestige, currentHp: null }; // HP全回復してスタート
     });
     setPrestigeAsk(false);
-    setHomeMode("game");
+    setHomeMode("reward"); // 周回は「ごほうび」タブの機能
     setScreen("home");
     setTimeout(() => setPrestigeDone(lap), 300);
   }
@@ -181,7 +187,8 @@ export default function App() {
   function addXp(gain) {
     updatePlayer((p) => {
       const isNewDay = p.lastDate !== todayStr();
-      const g = Math.round(gain * goldenMultiplier(p, Date.now(), todayStr()) * eventXpMult()); // ゴールデンタイム×1.2・月曜は×1.5
+      const cyclesToday = (p.daily && p.daily.date === todayStr()) ? (p.daily.cycles || 0) : 0; // 休憩：本日の完了サイクル数
+      const g = Math.round(gain * goldenMultiplier(p, Date.now(), todayStr()) * eventXpMult() * restMultiplier(cyclesToday)); // ×ゴールデン1.2・月曜1.5・休憩逓減
       const w = p.world || 1;
       const wx = p.worldXp || { 1: 0, 2: 0, 3: 0 };
       const cur = wx[w] || 0;
@@ -434,6 +441,31 @@ export default function App() {
       // ステップアップ(背骨)／じっくり：正解で1問10XP＋少額コイン（背骨を経済へ接続：設計メモ§10 Step1）
       if (ok) updatePlayer((p) => ({ ...p, coins: (p.coins ?? 0) + STEPUP_COIN_PER_CORRECT }));
       addXp(ok ? 10 : 0);
+    }
+
+    // 王道サイクルの進捗（§10 Step3）：unitごとに演習を数え、一周クリアで一括の大報酬＋休憩カウント
+    if (unitId) {
+      const prev = (data.player.cycle && data.player.cycle[unitId]) || {};
+      const next = {
+        practiceN: prev.practiceN || 0, relearnN: prev.relearnN || 0, appliedN: prev.appliedN || 0,
+        lecture: !!prev.lecture, done: !!prev.done,
+      };
+      if (ok) {
+        if (relearn) next.relearnN += 1;
+        else if (level === "advanced" || level === "oni") next.appliedN += 1;
+        else next.practiceN += 1;
+      }
+      const justCleared = !next.done && isCycleComplete(next);
+      if (justCleared) next.done = true;
+      const today = todayStr();
+      updatePlayer((p) => {
+        const cyc = { ...(p.cycle || {}), [unitId]: next };
+        const daily = (p.daily && p.daily.date === today) ? { ...p.daily } : { date: today, cycles: 0 };
+        let coins = p.coins ?? 0, crystals = p.crystals ?? 0;
+        if (justCleared) { daily.cycles = (daily.cycles || 0) + 1; coins += MASTER_CYCLE_COIN; crystals += MASTER_CYCLE_CRYSTAL; }
+        return { ...p, cycle: cyc, cycleLast: unitId, daily, coins, crystals };
+      });
+      if (justCleared) { sfx.levelUp(); setTimeout(() => setCrystalGet({ amount: MASTER_CYCLE_CRYSTAL }), 400); }
     }
   }
 
@@ -1360,9 +1392,20 @@ export default function App() {
     );
   }
 
-  // ホーム
+  // ホーム：本線サイクルの「今の単元」と進捗・休憩状態を計算して渡す（§10 Step2/3）
+  const cycleUnit = data.player.cycleLast ? findUnitById(data.player.cycleLast) : (chaptersForGrade(grade)[0]?.units?.[0] || null);
+  const _cst = (cycleUnit && data.player.cycle && data.player.cycle[cycleUnit.id]) || {};
+  const homeCycle = {
+    unitName: cycleUnit?.name || cycleUnit?.title || "今の単元",
+    practiceN: _cst.practiceN || 0, relearnN: _cst.relearnN || 0, appliedN: _cst.appliedN || 0,
+    lecture: !!_cst.lecture, done: !!_cst.done, target: CYCLE_PRACTICE_TARGET,
+  };
+  const _cyclesToday = (data.player.daily && data.player.daily.date === todayStr()) ? (data.player.daily.cycles || 0) : 0;
+  const restActive = _cyclesToday >= REST_CYCLES_SOFT;
   return (
     <Home
+      cycle={homeCycle}
+      restActive={restActive}
       player={data.player}
       records={data.records}
       mistakeCount={data.mistakes.length}

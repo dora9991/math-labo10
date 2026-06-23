@@ -1,9 +1,10 @@
 // ============================================================
-// Home.jsx — ホーム。まず「ゲーム／学習」を選び、それぞれ専用メニューを出す。
-//   mode: "hub"=モード選択 / "game"=ゲームモード / "learn"=学習モード
-//   ・共通（全モード）：あいさつ・曜日イベント・遊び方/キャラ・学年えらび
-//   ・ゲーム：タイムアタック/バトル/計算王/アイテム/スキル/図鑑/なかま＋ゴールデンタイム
-//   ・学習：あんしん/はいち/AI対話/学び直し/ステップアップ/単元テスト/クリニック＋学習の記録
+// Home.jsx — ホーム。王道サイクルを主役にした4タブ構成（§10 Step2）。
+//   tab: "adventure"=ぼうけん(本線：つづき＝StepUp＋サイクルマップ＋講義/演習/応用の道具)
+//        "reward"=ごほうび(バトル/アイテム/スキル/図鑑/なかま/周回)
+//        "record"=きろく(学び直し＋学習の記録)
+//        "settings"=せってい(遊び方/キャラ設定/学年)
+//   ・入口の「ゲーム vs 学習」二択フォークは廃止（飲まれの主犯）。毎回「ぼうけん」から始まる。
 // ============================================================
 import { useState, useEffect } from "react";
 import Header from "../components/Header.jsx";
@@ -17,12 +18,56 @@ import { gradesWithChapters } from "../data/index.js";
 const itemName = (id) => findItem(id)?.name ?? "";
 const GRADE_LABEL = { 1: "中1", 2: "中2", 3: "中3" };
 const GRADE_COLOR = { 1: "#818cf8", 2: "#f43f5e", 3: "#fbbf24" }; // 中1=藍 中2=赤 中3=黄
-const GAME_COLOR = "#f59e0b";  // ゲームモードのテーマ色
-const LEARN_COLOR = "#22c55e"; // 学習モードのテーマ色
+const MAIN_COLOR = "#6366f1"; // 本線（ぼうけん）のテーマ色
+const TABS = [
+  { key: "adventure", icon: "🧭", label: "ぼうけん" },
+  { key: "reward", icon: "🎁", label: "ごほうび" },
+  { key: "record", icon: "📊", label: "きろく" },
+  { key: "settings", icon: "🎨", label: "せってい" },
+];
+
+// 王道サイクルの進捗マップ（①講義→②演習→③学び直し→④応用→⑤クリア）
+function CycleMap({ cycle }) {
+  const c = cycle || {};
+  const target = c.target || 6;
+  const steps = [
+    { label: "講義", icon: "📺", done: !!c.lecture },
+    { label: "演習", icon: "✏️", done: (c.practiceN || 0) >= target, sub: `${Math.min(c.practiceN || 0, target)}/${target}` },
+    { label: "学び直し", icon: "📖", done: (c.relearnN || 0) > 0 },
+    { label: "応用", icon: "🧮", done: (c.appliedN || 0) > 0 },
+    { label: "クリア", icon: "🏆", done: !!c.done },
+  ];
+  const curIdx = c.done ? 4 : steps.findIndex((s) => !s.done);
+  return (
+    <div style={{ background: "rgba(99,102,241,.10)", border: "1px solid rgba(99,102,241,.35)", borderRadius: 14, padding: "11px 8px 9px", marginBottom: 14 }}>
+      <div style={{ fontSize: 11.5, fontWeight: 800, color: "#a5b4fc", marginBottom: 9, textAlign: "center" }}>
+        いまの単元：{c.unitName || "今の単元"}（一周クリアで大ごほうび🎁）
+      </div>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+        {steps.map((s, i) => {
+          const cur = i === curIdx;
+          return (
+            <div key={s.label} style={{ flex: 1, textAlign: "center" }}>
+              <div style={{
+                width: 30, height: 30, margin: "0 auto", borderRadius: "50%",
+                background: s.done ? MAIN_COLOR : "rgba(255,255,255,.05)",
+                border: s.done ? `2px solid ${MAIN_COLOR}` : cur ? "2px solid #818cf8" : "1px solid rgba(255,255,255,.13)",
+                color: s.done ? "#fff" : cur ? "#c7d2fe" : "rgba(255,255,255,.4)",
+                display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15,
+              }}>{s.done ? "✓" : s.icon}</div>
+              <div style={{ fontSize: 10, fontWeight: cur ? 900 : 700, color: s.done ? "#c7d2fe" : cur ? "#c7d2fe" : "rgba(255,255,255,.4)", marginTop: 3, lineHeight: 1.2 }}>{s.label}</div>
+              {s.sub && <div style={{ fontSize: 9.5, color: "rgba(255,255,255,.45)" }}>{s.sub}</div>}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 export default function Home({
   player, records, mistakeCount, grade = 1, onSetGrade,
-  mode = "hub", onSetMode,
+  mode = "adventure", onSetMode, cycle = {}, restActive = false,
   canPrestige = false, prestige = 0, onPrestige,
   onAnshin, onTimeAttack, onChallenge, onBattle, onRelearn, onDialogue, onHaichi,
   onClinic, onUnitTest, onStepUp, onStartGolden, onShop, onSkill, onCollection, onPartners,
@@ -38,44 +83,29 @@ export default function Home({
   const gMin = Math.max(1, Math.min(15, Math.ceil(goldenRemainMs(player, nowMs, today) / 60000)));
   const gEnded = goldenEndedToday(player, nowMs, today);
   const gStartedToday = player.golden?.date === today;
+  const ev = todayEvent();
 
-  // 大きな入口ボタン（あんしん・はいち等で共通利用）
-  const bigBtn = (onClick, icon, title, sub, bg, shadow, badge) => (
-    <button onClick={onClick} style={{
-      width: "100%", marginBottom: 12, padding: "14px 16px", borderRadius: 16, border: "2px solid rgba(255,255,255,.25)",
-      background: bg, color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", gap: 12, textAlign: "left", boxShadow: shadow,
-    }}>
-      <span style={{ fontSize: 38, lineHeight: 1 }}>{icon}</span>
-      <span>
-        <span style={{ fontSize: 17, fontWeight: 900, display: "block" }}>{title}{badge && <span style={{ fontSize: 11, opacity: .85 }}> {badge}</span>}</span>
-        <span style={{ fontSize: 12, fontWeight: 700, opacity: .92 }}>{sub}</span>
-      </span>
+  // 旧データ（"hub"/"game"/"learn"）が来ても本線(ぼうけん)に寄せる
+  const tab = TABS.some((t) => t.key === mode) ? mode : "adventure";
+
+  // サイクルの道具カード（はいち/あんしん等で共通利用）
+  const tool = (onClick, icon, title, sub, bg) => (
+    <button className="mode-card" style={bg ? { background: bg } : undefined} onClick={onClick}>
+      <span style={{ fontSize: 34 }}>{icon}</span>
+      <span style={{ fontSize: 14.5, fontWeight: 900 }}>{title}</span>
+      {sub && <span style={{ fontSize: 10.5, opacity: 0.82, lineHeight: 1.45 }}>{sub}</span>}
     </button>
   );
-
-  // モード切替（サブメニュー上部のセグメント）
-  const seg = (on, color) => ({
-    flex: 1, padding: "10px 6px", borderRadius: 12, cursor: "pointer", fontSize: 14, fontWeight: 900,
-    border: on ? `2px solid ${color}` : `1px solid ${color}55`, background: on ? `${color}33` : "rgba(255,255,255,.05)",
-    color: on ? "#fff" : color, boxShadow: on ? `0 0 12px ${color}55` : "none",
-  });
-  const ModeSwitch = () => (
-    <div style={{ display: "flex", gap: 8, margin: "2px 0 14px" }}>
-      <button data-sfx="none" onClick={() => onSetMode?.("game")} style={seg(mode === "game", GAME_COLOR)}>🎮 ゲーム</button>
-      <button data-sfx="none" onClick={() => onSetMode?.("learn")} style={seg(mode === "learn", LEARN_COLOR)}>📚 学習</button>
-      <button data-sfx="back" onClick={() => onSetMode?.("hub")} title="モード選択へ"
-        style={{ width: 46, borderRadius: 12, cursor: "pointer", fontSize: 18, fontWeight: 900, color: "rgba(255,255,255,.7)", background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.15)" }}>≡</button>
-    </div>
+  const sectionLabel = (text) => (
+    <div style={{ fontSize: 11.5, fontWeight: 800, color: "rgba(255,255,255,.55)", margin: "6px 2px 8px" }}>{text}</div>
   );
-
-  const ev = todayEvent();
 
   return (
     <div className="app">
       <MathBackdrop />
       <Header player={player} />
       <div className="content" style={{ position: "relative", zIndex: 1 }}>
-        {/* あいさつ吹き出し ＋ 右側に小さめのゴールデンタイムボタン */}
+        {/* あいさつ吹き出し ＋ 右側にゴールデンタイム小ボタン */}
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <CharBubble text={greeting} avatar={player.avatar} onAvatar={onCharacter} />
@@ -99,12 +129,10 @@ export default function Home({
           ) : null}
         </div>
 
-        {/* 今日の曜日イベント（共通） */}
+        {/* 今日の曜日イベント */}
         {ev && (
-          <div style={{
-            display: "flex", alignItems: "center", gap: 10, margin: "0 0 11px", padding: "10px 13px", borderRadius: 12,
-            background: `linear-gradient(135deg, ${ev.color}22, ${ev.color}10)`, border: `1.5px solid ${ev.color}88`,
-          }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "0 0 11px", padding: "10px 13px", borderRadius: 12,
+            background: `linear-gradient(135deg, ${ev.color}22, ${ev.color}10)`, border: `1.5px solid ${ev.color}88` }}>
             <span style={{ fontSize: 26, filter: `drop-shadow(0 0 6px ${ev.color})` }}>{ev.icon}</span>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13, fontWeight: 900, color: ev.color }}>今日は「{ev.label}」！</div>
@@ -113,89 +141,84 @@ export default function Home({
           </div>
         )}
 
-        {/* 遊び方・キャラ（共通） */}
-        <div style={{ display: "flex", gap: 8, marginBottom: 11 }}>
-          <button className="title-link" style={{ flex: 1 }} onClick={onHowTo}>📖 遊び方</button>
-          <button className="title-link" style={{ flex: 1 }} onClick={onCharacter}>🎨 キャラ設定</button>
-        </div>
+        {/* 休憩（日次逓減）バナー：やりすぎても旨くない＝そっと止める（§10 Step3） */}
+        {restActive && (
+          <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "0 0 11px", padding: "10px 13px", borderRadius: 12,
+            background: "rgba(34,197,94,.12)", border: "1.5px solid rgba(34,197,94,.5)" }}>
+            <span style={{ fontSize: 24 }}>🌙</span>
+            <div style={{ fontSize: 11.5, fontWeight: 800, color: "#86efac", lineHeight: 1.45 }}>
+              今日はよく伸びたね！<span style={{ fontWeight: 700, color: "rgba(255,255,255,.7)" }}>脳は休むと覚えるよ。続けてもOKだけど、また明日やると定着しやすい。</span>
+            </div>
+          </div>
+        )}
 
-        {/* 学年えらび（共通） */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-          <span style={{ fontSize: 11, fontWeight: 800, color: "rgba(255,255,255,.5)", whiteSpace: "nowrap" }}>学年</span>
-          {[1, 2, 3].map((g) => {
-            const ready = availGrades.includes(g);
-            const sel = grade === g;
-            const c = GRADE_COLOR[g];
+        {/* ===== タブバー（二択フォークの代わり） ===== */}
+        <div style={{ display: "flex", gap: 6, margin: "2px 0 14px" }}>
+          {TABS.map((t) => {
+            const on = tab === t.key;
             return (
-              <button key={g} onClick={() => ready && onSetGrade?.(g)} disabled={!ready}
-                style={{
-                  flex: 1, padding: "8px 4px", borderRadius: 10, cursor: ready ? "pointer" : "not-allowed", fontSize: 13, fontWeight: 900,
-                  border: sel ? `2px solid ${c}` : `1px solid ${c}66`, background: sel ? `${c}3a` : `${c}14`,
-                  color: ready ? (sel ? "#fff" : c) : "rgba(255,255,255,.35)", boxShadow: sel ? `0 0 12px ${c}66` : "none",
-                }}>
-                {GRADE_LABEL[g]}{!ready && <span style={{ fontSize: 8, display: "block", fontWeight: 700 }}>準備中</span>}
+              <button key={t.key} data-sfx="none" onClick={() => onSetMode?.(t.key)} style={{
+                flex: 1, padding: "9px 4px", borderRadius: 12, cursor: "pointer", textAlign: "center",
+                border: on ? "2px solid #818cf8" : "1px solid rgba(255,255,255,.14)",
+                background: on ? "rgba(99,102,241,.22)" : "rgba(255,255,255,.05)",
+                color: on ? "#fff" : "rgba(255,255,255,.6)", position: "relative",
+              }}>
+                <span style={{ fontSize: 20, display: "block", lineHeight: 1.1 }}>{t.icon}</span>
+                <span style={{ fontSize: 11, fontWeight: 900 }}>{t.label}</span>
+                {t.key === "record" && mistakeCount > 0 && (
+                  <span className="nb-badge" style={{ position: "absolute", top: 2, right: 6 }}>{mistakeCount}</span>
+                )}
               </button>
             );
           })}
         </div>
 
-        {/* ▶ つづき＝きょうの1問（王道サイクルの入口＝StepUp起動）。全モードで最上段に常設。設計メモ§10 Step1。 */}
-        {onStepUp && (
-          <button data-sfx="none" onClick={onStepUp} style={{
-            width: "100%", marginBottom: 14, padding: "16px 18px", borderRadius: 18, cursor: "pointer", textAlign: "left",
-            border: "2px solid rgba(255,255,255,.3)", color: "#fff",
-            background: "linear-gradient(135deg,#6366f1,#8b5cf6)", boxShadow: "0 6px 20px rgba(99,102,241,.4)",
-            display: "flex", alignItems: "center", gap: 12,
-          }}>
-            <span style={{ fontSize: 40, lineHeight: 1 }}>🎯</span>
-            <span>
-              <span style={{ fontSize: 19, fontWeight: 900, display: "block" }}>つづき（きょうの1問）</span>
-              <span style={{ fontSize: 12.5, fontWeight: 700, opacity: .92 }}>きみに合わせた問題から！まよったらコレ</span>
-            </span>
-          </button>
-        )}
-
-        {/* ===== ① モード選択ハブ ===== */}
-        {mode === "hub" && (
+        {/* ===== ① ぼうけん（本線サイクル） ===== */}
+        {tab === "adventure" && (
           <>
-            <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(255,255,255,.55)", textAlign: "center", margin: "2px 0 12px" }}>
-              今日はどっちで学ぶ？（あとから切り替えられるよ）
+            {/* ▶ つづき＝きょうの1問（StepUp起動）。本線の主役ボタン。 */}
+            {onStepUp && (
+              <button data-sfx="none" onClick={onStepUp} style={{
+                width: "100%", marginBottom: 12, padding: "16px 18px", borderRadius: 18, cursor: "pointer", textAlign: "left",
+                border: "2px solid rgba(255,255,255,.3)", color: "#fff",
+                background: "linear-gradient(135deg,#6366f1,#8b5cf6)", boxShadow: "0 6px 20px rgba(99,102,241,.4)",
+                display: "flex", alignItems: "center", gap: 12,
+              }}>
+                <span style={{ fontSize: 40, lineHeight: 1 }}>🎯</span>
+                <span>
+                  <span style={{ fontSize: 19, fontWeight: 900, display: "block" }}>つづき（きょうの1問）</span>
+                  <span style={{ fontSize: 12.5, fontWeight: 700, opacity: .92 }}>きみに合わせた問題から！まよったらコレ</span>
+                </span>
+              </button>
+            )}
+
+            <CycleMap cycle={cycle} />
+
+            {sectionLabel("わからない時は…（①講義）")}
+            <div className="mode-grid">
+              {tool(onHaichi, "📺", "はいちモード", "葉一さんの授業→確認", "linear-gradient(135deg,#ef4444,#f59e0b)")}
+              {onDialogue && tool(onDialogue, "🧑‍🏫", "AI対話", "先生と話して考える", "linear-gradient(135deg,#8b5cf6,#6366f1)")}
+              {tool(onAnshin, "🛟", "あんしんモード", "タイマーなし・誤答OK", "linear-gradient(135deg,#22c55e,#10b981)")}
             </div>
-            <button data-sfx="none" onClick={() => onSetMode?.("game")} style={{
-              width: "100%", marginBottom: 12, padding: "18px 18px", borderRadius: 18, cursor: "pointer", textAlign: "left",
-              border: "2px solid rgba(255,255,255,.25)", color: "#fff", background: "linear-gradient(135deg,#f59e0b,#ef4444)", boxShadow: "0 6px 20px rgba(239,68,68,.35)",
-            }}>
-              <span style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <span style={{ fontSize: 44, lineHeight: 1 }}>🎮</span>
-                <span><span style={{ fontSize: 20, fontWeight: 900, display: "block" }}>ゲームモード</span>
-                  <span style={{ fontSize: 12.5, fontWeight: 700, opacity: .92 }}>ガンガン勉強してレベルアップ！</span></span>
-              </span>
-              <span style={{ fontSize: 11.5, fontWeight: 700, opacity: .9, display: "block", marginTop: 8 }}>
-                ⏱️タイムアタック ・ ⚔️バトル ・ 🧮計算王 ・ 🎒装備/✨スキル ・ 📖図鑑/🐾なかま
-              </span>
-            </button>
-            <button data-sfx="none" onClick={() => onSetMode?.("learn")} style={{
-              width: "100%", marginBottom: 4, padding: "18px 18px", borderRadius: 18, cursor: "pointer", textAlign: "left",
-              border: "2px solid rgba(255,255,255,.25)", color: "#fff", background: "linear-gradient(135deg,#22c55e,#10b981)", boxShadow: "0 6px 20px rgba(16,185,129,.35)",
-            }}>
-              <span style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <span style={{ fontSize: 44, lineHeight: 1 }}>📚</span>
-                <span><span style={{ fontSize: 20, fontWeight: 900, display: "block" }}>学習モード</span>
-                  <span style={{ fontSize: 12.5, fontWeight: 700, opacity: .92 }}>じっくり・苦手をこくふく</span></span>
-              </span>
-              <span style={{ fontSize: 11.5, fontWeight: 700, opacity: .9, display: "block", marginTop: 8 }}>
-                🛟あんしん ・ 📺はいちモード ・ 📖学び直し ・ 🧑‍🏫AI対話 ・ 📊学習の記録
-              </span>
-            </button>
+
+            {sectionLabel("ためす（②演習 → ④応用）")}
+            <div className="mode-grid">
+              {tool(onTimeAttack, "⏱️", "タイムアタック", "時間内に何問解ける？")}
+              {tool(onChallenge, "🧮", "計算王への道", "連続正解に挑戦")}
+              {tool(onUnitTest, "📝", "単元テスト", "章のまとめ力だめし", "linear-gradient(135deg,#0ea5e9,#6366f1)")}
+              <button className="mode-card mut" onClick={onRelearn} style={{ position: "relative" }}>
+                {mistakeCount > 0 && <span className="nb-badge" style={{ position: "absolute", top: 8, right: 8 }}>{mistakeCount}</span>}
+                <span style={{ fontSize: 34 }}>📖</span>
+                <span style={{ fontSize: 14.5, fontWeight: 900 }}>学び直し</span>
+                <span style={{ fontSize: 10.5, opacity: 0.82, lineHeight: 1.45 }}>間違いを動画と練習で</span>
+              </button>
+            </div>
           </>
         )}
 
-        {/* ===== ② ゲームモード ===== */}
-        {mode === "game" && (
+        {/* ===== ② ごほうび（収集・育成・バトル＝寄り道） ===== */}
+        {tab === "reward" && (
           <>
-            <ModeSwitch />
-
-            {/* 👑 もう一周（周回）：魔王を倒したら、強さ等は残してお金/クリスタルをまた稼げる */}
             {canPrestige && onPrestige && (
               <button onClick={onPrestige} data-sfx="none" style={{
                 width: "100%", margin: "0 0 11px", padding: "12px 14px", borderRadius: 14, cursor: "pointer", textAlign: "left",
@@ -209,110 +232,52 @@ export default function Home({
                 </span>
               </button>
             )}
-
-            {/* ゴールデンタイムは、あいさつ吹き出しの右の小ボタンに移動済み */}
             <div className="mode-grid">
-              <button className="mode-card mta" onClick={onTimeAttack}>
-                <span style={{ fontSize: 36 }}>⏱️</span>
-                <span style={{ fontSize: 15, fontWeight: 900 }}>タイムアタック</span>
-                <span style={{ fontSize: 11, opacity: 0.8, lineHeight: 1.5 }}>限られた時間で<br />何問解ける？</span>
-              </button>
-              <button className="mode-card mut" onClick={onRelearn} style={{ position: "relative" }}>
-                {mistakeCount > 0 && <span className="nb-badge" style={{ position: "absolute", top: 8, right: 8 }}>{mistakeCount}</span>}
-                <span style={{ fontSize: 36 }}>📖</span>
-                <span style={{ fontSize: 15, fontWeight: 900 }}>学び直し</span>
-                <span style={{ fontSize: 11, opacity: 0.8, lineHeight: 1.5 }}>間違えた問題を<br />動画と練習で克服</span>
-              </button>
-              <button className="mode-card mba" onClick={onBattle}>
-                <span style={{ fontSize: 36 }}>⚔️</span>
-                <span style={{ fontSize: 15, fontWeight: 900 }}>バトルモード</span>
-                <span style={{ fontSize: 11, opacity: 0.8, lineHeight: 1.5 }}>モンスターと対戦！</span>
-              </button>
-              <button className="mode-card mch" onClick={onChallenge}>
-                <span style={{ fontSize: 36 }}>🧮</span>
-                <span style={{ fontSize: 15, fontWeight: 900 }}>計算王への道</span>
-                <span style={{ fontSize: 11, opacity: 0.8, lineHeight: 1.5 }}>連続正解で<br />自己ベストに挑戦</span>
-              </button>
-              <button className="mode-card msh" onClick={onShop}>
-                <span style={{ fontSize: 36 }}>🎒</span>
-                <span style={{ fontSize: 15, fontWeight: 900 }}>アイテム</span>
-                <span style={{ fontSize: 11, opacity: 0.8, lineHeight: 1.5 }}>
-                  どうぐ・そうび・回復<br />💰{player.coins ?? 0}{player.item && <> ／ 🎒{itemName(player.item)}</>}
-                </span>
-              </button>
-              <button className="mode-card msk" onClick={onSkill}>
-                <span style={{ fontSize: 36 }}>✨</span>
-                <span style={{ fontSize: 15, fontWeight: 900 }}>スキル</span>
-                <span style={{ fontSize: 11, opacity: 0.8, lineHeight: 1.5 }}>バトルで使う<br />スキルをセット</span>
-              </button>
+              {tool(onBattle, "⚔️", "バトルモード", "モンスターと対戦！", "linear-gradient(135deg,#ef4444,#b91c1c)")}
+              {tool(onShop, "🎒", "アイテム", `どうぐ・そうび 💰${player.coins ?? 0}${player.item ? ` ／🎒${itemName(player.item)}` : ""}`)}
+              {tool(onSkill, "✨", "スキル", "バトルで使うスキル")}
+              {onCollection && tool(onCollection, "📖", "モンスター図鑑", "倒したモンスターを集める", "linear-gradient(135deg,#0ea5e9,#22d3ee)")}
+              {onPartners && tool(onPartners, "🐾", "なかま", "仲間を編成・育成", "linear-gradient(135deg,#f59e0b,#f472b6)")}
             </div>
-
-            {onCollection && (
-              <button className="nb-btn" onClick={onCollection} style={{ marginTop: 10, background: "linear-gradient(135deg,#0ea5e9,#22d3ee)", color: "#fff" }}>
-                📖 モンスター図鑑（倒したモンスターを集めよう）
-              </button>
-            )}
-
-            {onPartners && (
-              <button className="nb-btn" onClick={onPartners} style={{ marginTop: 10, background: "linear-gradient(135deg,#f59e0b,#f472b6)", color: "#fff" }}>
-                🐾 なかま（仲間モンスターを編成・育成してバトルへ）
-              </button>
-            )}
           </>
         )}
 
-        {/* ===== ③ 学習モード ===== */}
-        {mode === "learn" && (
+        {/* ===== ③ きろく（学び直し＋学習の記録） ===== */}
+        {tab === "record" && (
           <>
-            <ModeSwitch />
-
-            <div className="mode-grid">
-              {/* 1段目：左=はいちモード／右=学び直し */}
-              <button className="mode-card" style={{ background: "linear-gradient(135deg,#ef4444,#f59e0b)" }} onClick={onHaichi}>
-                <span style={{ fontSize: 36 }}>📺</span>
-                <span style={{ fontSize: 15, fontWeight: 900 }}>はいちモード</span>
-                <span style={{ fontSize: 11, opacity: 0.85, lineHeight: 1.5 }}>葉一さんの授業→<br />リンク問題で確認</span>
-              </button>
-              <button className="mode-card mut" onClick={onRelearn} style={{ position: "relative" }}>
-                {mistakeCount > 0 && <span className="nb-badge" style={{ position: "absolute", top: 8, right: 8 }}>{mistakeCount}</span>}
-                <span style={{ fontSize: 36 }}>📖</span>
-                <span style={{ fontSize: 15, fontWeight: 900 }}>学び直し</span>
-                <span style={{ fontSize: 11, opacity: 0.8, lineHeight: 1.5 }}>間違えた問題を<br />動画と練習で克服</span>
-              </button>
-              {/* 2段目：左=あんしんモード／右=計算王への道 */}
-              <button className="mode-card" style={{ background: "linear-gradient(135deg,#22c55e,#10b981)" }} onClick={onAnshin}>
-                <span style={{ fontSize: 36 }}>🛟</span>
-                <span style={{ fontSize: 15, fontWeight: 900 }}>あんしんモード</span>
-                <span style={{ fontSize: 11, opacity: 0.85, lineHeight: 1.5 }}>タイマーなし・<br />まちがえてもOK</span>
-              </button>
-              <button className="mode-card mch" onClick={onChallenge}>
-                <span style={{ fontSize: 36 }}>🧮</span>
-                <span style={{ fontSize: 15, fontWeight: 900 }}>計算王への道</span>
-                <span style={{ fontSize: 11, opacity: 0.8, lineHeight: 1.5 }}>連続正解で<br />自己ベストに挑戦</span>
-              </button>
-              {/* 3段目：左=単元テスト／右=タイムアタック */}
-              <button className="mode-card" style={{ background: "linear-gradient(135deg,#0ea5e9,#6366f1)" }} onClick={onUnitTest}>
-                <span style={{ fontSize: 36 }}>📝</span>
-                <span style={{ fontSize: 15, fontWeight: 900 }}>単元テスト</span>
-                <span style={{ fontSize: 11, opacity: 0.85, lineHeight: 1.5 }}>章のまとめ<br />力だめし</span>
-              </button>
-              <button className="mode-card mta" onClick={onTimeAttack}>
-                <span style={{ fontSize: 36 }}>⏱️</span>
-                <span style={{ fontSize: 15, fontWeight: 900 }}>タイムアタック</span>
-                <span style={{ fontSize: 11, opacity: 0.8, lineHeight: 1.5 }}>限られた時間で<br />何問解ける？</span>
-              </button>
-              {/* AI対話＝孤児プロップだった導線を復活（設計メモ§10 Step1）。本線では“寄り道”扱い。 */}
-              {onDialogue && (
-                <button className="mode-card" style={{ background: "linear-gradient(135deg,#8b5cf6,#6366f1)" }} onClick={onDialogue}>
-                  <span style={{ fontSize: 36 }}>🧑‍🏫</span>
-                  <span style={{ fontSize: 15, fontWeight: 900 }}>AI対話</span>
-                  <span style={{ fontSize: 11, opacity: 0.85, lineHeight: 1.5 }}>先生と話しながら<br />考える授業</span>
-                </button>
-              )}
-            </div>
-
-            {/* 学習の記録（ダッシュボード） */}
+            <button className="nb-btn" onClick={onRelearn} style={{ background: "linear-gradient(135deg,#6366f1,#8b5cf6)", color: "#fff", position: "relative", marginBottom: 10 }}>
+              📖 学び直し（間違えた問題を動画と練習で克服）
+              {mistakeCount > 0 && <span className="nb-badge" style={{ position: "absolute", top: 8, right: 10 }}>{mistakeCount}</span>}
+            </button>
             <Dashboard player={player} records={records || []} onDetail={onDetail} grade={grade} />
+          </>
+        )}
+
+        {/* ===== ④ せってい（遊び方・キャラ・学年） ===== */}
+        {tab === "settings" && (
+          <>
+            <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+              <button className="title-link" style={{ flex: 1 }} onClick={onHowTo}>📖 遊び方</button>
+              <button className="title-link" style={{ flex: 1 }} onClick={onCharacter}>🎨 キャラ設定</button>
+            </div>
+            <div style={{ fontSize: 11.5, fontWeight: 800, color: "rgba(255,255,255,.55)", margin: "6px 2px 8px" }}>学年をえらぶ</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              {[1, 2, 3].map((g) => {
+                const ready = availGrades.includes(g);
+                const sel = grade === g;
+                const c = GRADE_COLOR[g];
+                return (
+                  <button key={g} onClick={() => ready && onSetGrade?.(g)} disabled={!ready}
+                    style={{
+                      flex: 1, padding: "12px 4px", borderRadius: 10, cursor: ready ? "pointer" : "not-allowed", fontSize: 15, fontWeight: 900,
+                      border: sel ? `2px solid ${c}` : `1px solid ${c}66`, background: sel ? `${c}3a` : `${c}14`,
+                      color: ready ? (sel ? "#fff" : c) : "rgba(255,255,255,.35)", boxShadow: sel ? `0 0 12px ${c}66` : "none",
+                    }}>
+                    {GRADE_LABEL[g]}{!ready && <span style={{ fontSize: 8, display: "block", fontWeight: 700 }}>準備中</span>}
+                  </button>
+                );
+              })}
+            </div>
           </>
         )}
       </div>

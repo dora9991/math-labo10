@@ -129,6 +129,29 @@ export const RELEARN_CRYSTAL_EVERY = 15;
 export const STEPUP_COIN_PER_CORRECT = 3;   // ステップアップ／じっくり練習の正解コイン
 export const RELEARN_COIN_PER_CORRECT = 3;  // 学び直しの正解コイン（XP/クリスタルは従来どおり）
 
+// ── マスターサイクル（王道一周）報酬：設計メモ§8柱2/§10 Step3 ──
+// 1単元を背骨(StepUp/じっくり)で解き重ねて“一周”したら一括の大報酬。
+// 「速く回す」より「丁寧に一周」がコイン/クリスタル効率で上回るようにする（飲まれ対策）。
+export const CYCLE_PRACTICE_TARGET = 6;   // 一周に必要な演習の正解数（背骨で必ず到達できる量）
+export const MASTER_CYCLE_COIN = 120;     // 一周クリアのコイン束（TA1回=約30〜60より厚い）
+export const MASTER_CYCLE_CRYSTAL = 3;    // 一周クリアのクリスタル
+
+/** その単元のサイクルが一周クリアか（演習量が目標に到達） */
+export function isCycleComplete(c = {}) {
+  return (c.practiceN || 0) >= CYCLE_PRACTICE_TARGET;
+}
+
+// ── 休憩（日次逓減）：やりすぎても旨くない＝自然に止まる（§8柱5/§10 Step3）──
+// 本日の「完了サイクル数」が増えるほど、XP・サイクル報酬を逓減する（強制ロックはしない）。
+export const REST_CYCLES_SOFT = 3;  // 本日サイクルこれ以上で報酬↓（×0.5）
+export const REST_CYCLES_HARD = 5;  // さらに↓（×0.25）
+/** 本日の完了サイクル数から、XP/報酬の倍率（1 → 0.5 → 0.25） */
+export function restMultiplier(cyclesToday = 0) {
+  if (cyclesToday >= REST_CYCLES_HARD) return 0.25;
+  if (cyclesToday >= REST_CYCLES_SOFT) return 0.5;
+  return 1;
+}
+
 /** タイムアタック1回で稼げるコイン（正解1問=3コイン＋星ボーナス）
  *  アイテム購入の元手。XPと違ってくり返しでも減らさない（コツコツ稼げる）。 */
 export function timeAttackCoins({ correct = 0, stars = 0 }) {

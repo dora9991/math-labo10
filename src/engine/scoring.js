@@ -123,6 +123,12 @@ export const XP_PENALTY_PER_WRONG = 3;
 export const RELEARN_XP_PER_CORRECT = 15;
 export const RELEARN_CRYSTAL_EVERY = 15;
 
+// ── 背骨(StepUp/弱点克服)・学び直しを「報酬のある学習」にする（王道サイクルの要）──
+// 設計メモ§8/§10 Step1：背骨と丁寧な学習が“割に合わない”状態を是正。正解ごとに少額コインを付与
+//  （グラインドTA=3/正解と同等にして、速さで稼ぐより損しないように）。
+export const STEPUP_COIN_PER_CORRECT = 3;   // ステップアップ／じっくり練習の正解コイン
+export const RELEARN_COIN_PER_CORRECT = 3;  // 学び直しの正解コイン（XP/クリスタルは従来どおり）
+
 /** タイムアタック1回で稼げるコイン（正解1問=3コイン＋星ボーナス）
  *  アイテム購入の元手。XPと違ってくり返しでも減らさない（コツコツ稼げる）。 */
 export function timeAttackCoins({ correct = 0, stars = 0 }) {

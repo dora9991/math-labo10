@@ -9,7 +9,7 @@
 import { useState, useEffect, useRef, lazy, Suspense } from "react";
 import * as store from "./store/localStore.js"; // ★将来ここを supabase.js に差し替える
 import { makeRecord, makeMistake } from "./store/recordSchema.js";
-import { levelFromXp, xpForLevel, playerLevel, playerXp, timeAttackCrystal, RELEARN_XP_PER_CORRECT, RELEARN_CRYSTAL_EVERY } from "./engine/scoring.js";
+import { levelFromXp, xpForLevel, playerLevel, playerXp, timeAttackCrystal, RELEARN_XP_PER_CORRECT, RELEARN_CRYSTAL_EVERY, STEPUP_COIN_PER_CORRECT, RELEARN_COIN_PER_CORRECT } from "./engine/scoring.js";
 import * as bgm from "./audio/bgm.js";
 import * as sfx from "./audio/sfx.js";
 
@@ -426,11 +426,14 @@ export default function App() {
         ...p,
         relearnSolved: (p.relearnSolved || 0) + 1,
         crystals: (p.crystals ?? 0) + crystalUp,
+        coins: (p.coins ?? 0) + (ok ? RELEARN_COIN_PER_CORRECT : 0), // 学び直しもコイン源に（王道サイクルの要）
       }));
       if (crystalUp) setTimeout(() => setCrystalGet({ amount: crystalUp }), 500);
       addXp(ok ? Math.round(RELEARN_XP_PER_CORRECT * eventRelearnMult()) : 0); // 火曜=学び直しデーは2倍
     } else {
-      addXp(ok ? 10 : 0); // ステップアップ／じっくりは1問10XP
+      // ステップアップ(背骨)／じっくり：正解で1問10XP＋少額コイン（背骨を経済へ接続：設計メモ§10 Step1）
+      if (ok) updatePlayer((p) => ({ ...p, coins: (p.coins ?? 0) + STEPUP_COIN_PER_CORRECT }));
+      addXp(ok ? 10 : 0);
     }
   }
 

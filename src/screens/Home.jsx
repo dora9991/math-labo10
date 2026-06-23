@@ -139,6 +139,22 @@ export default function Home({
           })}
         </div>
 
+        {/* ▶ つづき＝きょうの1問（王道サイクルの入口＝StepUp起動）。全モードで最上段に常設。設計メモ§10 Step1。 */}
+        {onStepUp && (
+          <button data-sfx="none" onClick={onStepUp} style={{
+            width: "100%", marginBottom: 14, padding: "16px 18px", borderRadius: 18, cursor: "pointer", textAlign: "left",
+            border: "2px solid rgba(255,255,255,.3)", color: "#fff",
+            background: "linear-gradient(135deg,#6366f1,#8b5cf6)", boxShadow: "0 6px 20px rgba(99,102,241,.4)",
+            display: "flex", alignItems: "center", gap: 12,
+          }}>
+            <span style={{ fontSize: 40, lineHeight: 1 }}>🎯</span>
+            <span>
+              <span style={{ fontSize: 19, fontWeight: 900, display: "block" }}>つづき（きょうの1問）</span>
+              <span style={{ fontSize: 12.5, fontWeight: 700, opacity: .92 }}>きみに合わせた問題から！まよったらコレ</span>
+            </span>
+          </button>
+        )}
+
         {/* ===== ① モード選択ハブ ===== */}
         {mode === "hub" && (
           <>
@@ -285,6 +301,14 @@ export default function Home({
                 <span style={{ fontSize: 15, fontWeight: 900 }}>タイムアタック</span>
                 <span style={{ fontSize: 11, opacity: 0.8, lineHeight: 1.5 }}>限られた時間で<br />何問解ける？</span>
               </button>
+              {/* AI対話＝孤児プロップだった導線を復活（設計メモ§10 Step1）。本線では“寄り道”扱い。 */}
+              {onDialogue && (
+                <button className="mode-card" style={{ background: "linear-gradient(135deg,#8b5cf6,#6366f1)" }} onClick={onDialogue}>
+                  <span style={{ fontSize: 36 }}>🧑‍🏫</span>
+                  <span style={{ fontSize: 15, fontWeight: 900 }}>AI対話</span>
+                  <span style={{ fontSize: 11, opacity: 0.85, lineHeight: 1.5 }}>先生と話しながら<br />考える授業</span>
+                </button>
+              )}
             </div>
 
             {/* 学習の記録（ダッシュボード） */}

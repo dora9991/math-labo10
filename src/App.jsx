@@ -1313,6 +1313,7 @@ export default function App() {
           onHome={() => setScreen("home")}
           onHaichi={(unit) => openHaichiStudio(unit, "stepUp")}
           onChallenge={() => setScreen("calcKingPick")}
+          onRelearn={() => setScreen("relearn")}
         />
       );
     }

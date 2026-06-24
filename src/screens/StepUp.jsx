@@ -30,7 +30,7 @@ const AUTO_NEXT_MS = 750; // 正解時に次の問題へ移るまでの待ち時
 const ROUND_SIZE = 10;     // 1セット＝10問。解き終えると結果画面で区切る
 const POINT_PER_CORRECT = 10; // 1問正解の獲得ポイント（App側の付与XPと一致）
 
-export default function StepUp({ player, chapter, onAttempt, onHome, targetSkill = null, onHaichi = null, onChallenge = null }) {
+export default function StepUp({ player, chapter, onAttempt, onHome, targetSkill = null, onHaichi = null, onChallenge = null, onRelearn = null }) {
   // 習熟度はローカルにも持ち、出題選定はこれを見る（保存はApp側にも反映）
   const statsRef = useRef({ ...(player?.skillStats || {}) });
   const lastIdRef = useRef(null);
@@ -56,7 +56,7 @@ export default function StepUp({ player, chapter, onAttempt, onHome, targetSkill
   const [phase, setPhase] = useState("play");    // "play" | "result"
   const [done, setDone] = useState(0);           // このセットで解いた数（メーター用）
   const [result, setResult] = useState(null);    // セット結果のスナップショット
-  const roundRef = useRef({ n: 0, correct: 0, improved: new Set() }); // セット集計（setTimeoutでも参照）
+  const roundRef = useRef({ n: 0, correct: 0, improved: new Set(), mistakes: [] }); // セット集計（setTimeoutでも参照）
 
   // 次の一問を用意する
   function next() {
@@ -145,6 +145,7 @@ export default function StepUp({ player, chapter, onAttempt, onHome, targetSkill
     r.n += 1;
     if (ok) r.correct += 1;
     if (mNew > mOld + 0.001) r.improved.add(skill);
+    if (!ok) r.mistakes.push({ q: problem.q, ans: problem.ans, skill }); // 間違い一覧用（§12 背骨）
     setDone(r.n);
     const roundDone = r.n >= ROUND_SIZE;
 
@@ -176,6 +177,7 @@ export default function StepUp({ player, chapter, onAttempt, onHome, targetSkill
       correct: r.correct,
       improved: [...r.improved],
       points: r.correct * POINT_PER_CORRECT,
+      mistakes: r.mistakes || [],
     });
     setPhase("result");
   }
@@ -188,7 +190,7 @@ export default function StepUp({ player, chapter, onAttempt, onHome, targetSkill
 
   // 「続ける」：集計をリセットして次のセットを始める
   function startRound() {
-    roundRef.current = { n: 0, correct: 0, improved: new Set() };
+    roundRef.current = { n: 0, correct: 0, improved: new Set(), mistakes: [] };
     runRef.current = 0; // 連続カウントもリセット（新しいセットは難易度ニュートラルから）
     setStreak(0);
     setDone(0);
@@ -246,6 +248,36 @@ export default function StepUp({ player, chapter, onAttempt, onHome, targetSkill
               </div>
             )}
           </div>
+
+          {/* ▼ サイクルの背骨：間違い一覧 → 学び直しへ（§12 背骨スライス） */}
+          {result.mistakes && result.mistakes.length > 0 ? (
+            <div className="glass" style={{ padding: "13px 14px" }}>
+              <div className="slbl">📋 まちがえた問題（{result.mistakes.length}）</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, margin: "6px 0 4px" }}>
+                {result.mistakes.slice(0, 6).map((m, i) => (
+                  <div key={i} style={{ fontSize: 12.5, color: "rgba(255,255,255,.82)", display: "flex", justifyContent: "space-between", gap: 8, background: "rgba(248,113,113,.08)", border: "1px solid rgba(248,113,113,.25)", borderRadius: 8, padding: "7px 10px" }}>
+                    <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><MathText>{m.q}</MathText></span>
+                    <span style={{ flexShrink: 0, color: "#4ade80", fontWeight: 800 }}>= <MathText>{m.ans}</MathText></span>
+                  </div>
+                ))}
+                {result.mistakes.length > 6 && (
+                  <div style={{ fontSize: 11, color: "rgba(255,255,255,.45)", textAlign: "center" }}>ほか {result.mistakes.length - 6} 問</div>
+                )}
+              </div>
+              {onRelearn && (
+                <button onClick={onRelearn} data-sfx="none"
+                  style={{ width: "100%", marginTop: 8, padding: "13px", borderRadius: 12, border: "none", cursor: "pointer", fontSize: 15, fontWeight: 900, color: "#fff", background: "linear-gradient(135deg,#6366f1,#8b5cf6)" }}>
+                  📖 まちがいを直しに行く（{result.mistakes.length}問）→
+                </button>
+              )}
+              <div style={{ fontSize: 11, color: "rgba(255,255,255,.5)", textAlign: "center", marginTop: 7 }}>ここを直せば、この単元クリア！💎</div>
+            </div>
+          ) : (
+            <div className="glass" style={{ padding: "15px 14px", textAlign: "center" }}>
+              <div style={{ fontSize: 16, fontWeight: 900, color: "#4ade80" }}>🎉 全問せいかい！かんぺき！</div>
+              <div style={{ fontSize: 12, color: "rgba(255,255,255,.55)", marginTop: 4 }}>この調子！応用にも挑戦してみよう</div>
+            </div>
+          )}
 
           <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
             <button onClick={onHome} data-sfx="back"

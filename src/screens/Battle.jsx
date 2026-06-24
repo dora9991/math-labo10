@@ -732,7 +732,10 @@ export default function Battle({ player, monster, ally = null, onResult, onSpCha
       const newCombo = sealed ? 0 : combo + 1;
       setCombo(newCombo);
       changeSp(sp + 1); // 正解でSP+1（5でスキル1、10でスキル2）
-      let dmg = calcDamage(stats.atk, newCombo);
+      // 強さ＝理解度（§13-8）：通常ダメージはレベル/ATK非依存。1正解＝敵HPの約1/10＝約10問で撃破。
+      //   コンボ3以上で少し上乗せ（連続正解のごほうび）。正負の数で調整中の新バランス。
+      const baseDmg = Math.max(1, Math.ceil(monster.hp / 10));
+      let dmg = newCombo >= 3 ? Math.round(baseDmg * 1.3) : baseDmg;
       // 武器の特殊効果「会心」：3コンボ以上でさらに会心ボーナスを上乗せ
       if (specials.critPct > 0 && newCombo >= 3) dmg += Math.floor(stats.atk * specials.critPct);
       let boosted = false, crit = false, doubled = false, cursed = false, exposed = false;

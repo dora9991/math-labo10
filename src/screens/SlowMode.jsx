@@ -21,7 +21,7 @@ import { genProblem, makeChoices } from "../engine/generator.js";
 import { isCorrect, SLOW_TARGET, slowXp, xpRepeatMultiplier } from "../engine/scoring.js";
 
 const todayStr = () => new Date().toLocaleDateString("ja-JP");
-const ANSHIN_TARGET = 5; // あんしんモードの「できた！の階段」目標（正解の累計）
+const ANSHIN_TARGET = 10; // れんしゅう（あんしん）の目標＝10問正解でクリア（2026-06-24 5→10に調整）
 
 // 4択ヘルパー（タイムアタックと同じ。式の4択＝文字列厳密一致／数値＝makeChoices＋数値照合）
 const shuffle = (a) => a.map((v) => [Math.random(), v]).sort((x, y) => x[0] - y[0]).map((x) => x[1]);

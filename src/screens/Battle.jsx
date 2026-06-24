@@ -34,7 +34,9 @@ function genHardProblem(monster, lastId) {
   return genBattleProblem(monster, lastId, "oni") || genBattleProblem(monster, lastId, "advanced");
 }
 
-export default function Battle({ player, monster, ally = null, onResult, onSpChange, onItemUse, onUseBait, onHpChange, onWinBonus, onExit, onMistake }) {
+export default function Battle({ player, monster, ally = null, onResult, onSpChange, onItemUse, onUseBait, onHpChange, onWinBonus, onExit, onMistake, problemSource = null, onAttempt = null }) {
+  // problemSource: あれば出題をこの関数(lastId)→problemに差し替える＝「演習バトル」（仕様はStepUpと同一）
+  // onAttempt: あれば1問ごとに {skill,unitId,level,ok,...} を通知＝習熟(Elo)＋サイクル進捗を更新
   const lv = playerLevel(player); // 現在ワールド（学年）のレベルでバトル能力が決まる
   const specials = useRef(gearSpecials(player)).current; // 装備の特殊効果（lifesteal/regenPct/startSp/critPct）
   // 制限時間 = 基本の制限時間 × (自分のレベル+10) ÷ (敵の適正レベル+10)（切り上げ）
@@ -50,7 +52,7 @@ export default function Battle({ player, monster, ally = null, onResult, onSpCha
   const startHp = player.currentHp == null ? stats.maxHp : Math.max(1, Math.min(stats.maxHp, player.currentHp));
   const [playerHp, setPlayerHp] = useState(startHp);
   const [monsterHp, setMonsterHp] = useState(monster.hp);
-  const [q, setQ] = useState(() => genBattleProblem(monster));
+  const [q, setQ] = useState(() => (problemSource ? problemSource(null) : genBattleProblem(monster)));
   const [timer, setTimer] = useState(stats.timer);
   const [combo, setCombo] = useState(0);
   const [sp, setSp] = useState(() => Math.min(SP_MAX, (player.sp ?? 0) + (gearSpecials(player).startSp || 0))); // スキルポイント（永続）＋防具の開始SPボーナス
@@ -223,7 +225,7 @@ export default function Battle({ player, monster, ally = null, onResult, onSpCha
     let mode = null; // "max"（鬼級）/ "advanced"（発展）/ null
     if (fm && fm.turns > 0) { mode = "max"; forceMaxRef.current = fm.turns - 1 > 0 ? { ...fm, turns: fm.turns - 1 } : null; }
     else if (fh && fh.turns > 0) { mode = "advanced"; forceHardRef.current = fh.turns - 1 > 0 ? { ...fh, turns: fh.turns - 1 } : null; }
-    setQ((cur) => (mode === "max" ? genHardProblem(monster, cur?.id) : genBattleProblem(monster, cur?.id, mode)));
+    setQ((cur) => (problemSource ? problemSource(cur?.id) : mode === "max" ? genHardProblem(monster, cur?.id) : genBattleProblem(monster, cur?.id, mode)));
     setInput("");
     setLocked(false); lockedRef.current = false;
     // 制限時間：時間バフ（しゅうちゅう等）で伸ばし、敵デバフ（時間どろぼう等）で縮める
@@ -720,6 +722,8 @@ export default function Battle({ player, monster, ally = null, onResult, onSpCha
     if (locked || phaseRef.current !== "fight" || !q || val === "" || val == null) return;
     setLocked(true); lockedRef.current = true;
     const ok = ansEq(val, q);
+    // 演習バトル：1問ごとに習熟(Elo)＋サイクル進捗を更新（仕様はStepUpと同一・表現がバトル）
+    if (onAttempt) onAttempt({ skill: q.skill, unitId: q.unitId, level: q.level, ok, q: q.q, ans: q.ans });
 
     if (ok) {
       sfx.correct();
@@ -806,6 +810,7 @@ export default function Battle({ player, monster, ally = null, onResult, onSpCha
     sfx.wrong();
     tallyRef.current.wrong++; // 学習記録：時間切れも不正解として数える
     if (q) onMistake?.({ q: q.q, ans: q.ans, unitId: q.unitId, level: q.level }); // 時間切れも学び直しへ
+    if (onAttempt && q) onAttempt({ skill: q.skill, unitId: q.unitId, level: q.level, ok: false, q: q.q, ans: q.ans }); // 演習バトル：時間切れも1試行
     enemyTurn("⏰時間切れ！");
     setTimeout(() => { if (phaseRef.current === "fight") { setMonState("idle"); nextQuestion(); } }, 850);
   };

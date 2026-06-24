@@ -10,6 +10,8 @@ import { useState, useEffect, useRef, lazy, Suspense } from "react";
 import * as store from "./store/localStore.js"; // ★将来ここを supabase.js に差し替える
 import { makeRecord, makeMistake } from "./store/recordSchema.js";
 import { levelFromXp, xpForLevel, playerLevel, playerXp, timeAttackCrystal, RELEARN_XP_PER_CORRECT, RELEARN_CRYSTAL_EVERY, STEPUP_COIN_PER_CORRECT, RELEARN_COIN_PER_CORRECT, CYCLE_PRACTICE_TARGET, MASTER_CYCLE_COIN, MASTER_CYCLE_CRYSTAL, isCycleComplete, REST_CYCLES_SOFT, restMultiplier } from "./engine/scoring.js";
+import { genProblem, makeChoices } from "./engine/generator.js";
+import { updateMastery, levelDifficulty, INITIAL_MASTERY } from "./engine/mastery.js";
 import * as bgm from "./audio/bgm.js";
 import * as sfx from "./audio/sfx.js";
 
@@ -94,6 +96,9 @@ export default function App() {
   const [prestigeDone, setPrestigeDone] = useState(null);   // 周回開始の演出（何周目か）
   const [sel, setSel] = useState({ chapter: null, unit: null, level: null });
   const [battleMonster, setBattleMonster] = useState(null); // 選択中のモンスター
+  const [battlePractice, setBattlePractice] = useState(null); // 演習バトル中の単元（null=通常のモンスターバトル）
+  const skillStatsRef = useRef(data.player.skillStats || {}); // 演習バトルの適応出題が最新の習熟度を読むため
+  useEffect(() => { skillStatsRef.current = data.player.skillStats || {}; }, [data.player.skillStats]);
   const [battleKey, setBattleKey] = useState(0); // 「もう一度」で戦闘をやり直す用
   const [utChapter, setUtChapter] = useState(null); // 単元テストの対象章
   const [lessonUnit, setLessonUnit] = useState(null); // 「動画＋ワークシート」レッスンの対象単元
@@ -408,12 +413,16 @@ export default function App() {
   function recordStepAttempt({ skill, unitId, level, templateId, ok, q, ans, mNew, relearn = false }) {
     const sid = data.player.studentId;
     // スキルタグがある中1のみ習熟度(Elo)を更新（中2・中3の固定問題は skill=null）
+    // mNew は画面側Elo算出（StepUp/StepUpSimple）。バトル等で未指定なら、ここでElo更新する。
+    const mFinal = skill == null ? null
+      : (mNew != null ? mNew
+        : updateMastery((data.player.skillStats?.[skill]?.m) ?? INITIAL_MASTERY, levelDifficulty(level), ok ? 1 : 0));
     if (skill) {
       updatePlayer((p) => {
         const prev = (p.skillStats && p.skillStats[skill]) || { m: 0.5, n: 0 };
         return {
           ...p,
-          skillStats: { ...(p.skillStats || {}), [skill]: { m: mNew, n: prev.n + 1, last: todayStr() } },
+          skillStats: { ...(p.skillStats || {}), [skill]: { m: mFinal, n: prev.n + 1, last: todayStr() } },
         };
       });
     }
@@ -963,13 +972,30 @@ export default function App() {
   // あんしん／じっくりのクリア後に「バトルで実践」へ進む導線。
   //  その単元のモンスターが解放済み（あんしんで easy★1 が付くと解放される）なら直接対戦、
   //  まだなら相手選択画面（バトルモード）へ。流れ：あんしん→学び直し→バトル。
+  // 演習バトルの出題＝この単元の「適応問題」（StepUpと同じ仕様：習熟に応じた難易度で1問ずつ）
+  function adaptiveLevelForUnit(unit, stats) {
+    const skills = [...new Set(["easy", "standard", "advanced"].flatMap((L) => (unit.problems?.[L] || []).map((t) => t.skill)).filter(Boolean))];
+    const avg = skills.length ? skills.reduce((s, sk) => s + ((stats[sk]?.m) ?? INITIAL_MASTERY), 0) / skills.length : INITIAL_MASTERY;
+    const has = (L) => (unit.problems?.[L]?.length || 0) > 0;
+    let lvl = avg < 0.45 ? "easy" : avg < 0.72 ? "standard" : "advanced"; // 期待正答率≈0.75を狙う簡易版
+    if (!has(lvl)) lvl = has("standard") ? "standard" : has("easy") ? "easy" : "advanced";
+    return lvl;
+  }
+  function battleProblemSource(unit) {
+    return (lastId) => {
+      const lvl = adaptiveLevelForUnit(unit, skillStatsRef.current);
+      const p = genProblem(unit, lvl, lastId) || genProblem(unit, "easy", lastId) || genProblem(unit, "standard", lastId);
+      return p ? { ...p, choices: makeChoices(p.ans) } : null; // choices→4択(数値) / 記述は自由入力
+    };
+  }
   function goBattleForUnit(unit) {
     const monster = unit && MONSTERS.find((m) => m.kind === "unit" && m.unitId === unit.id);
     if (monster && isUnitMonsterUnlocked(data.player, monster)) {
       setBattleMonster(monster);
+      setBattlePractice(unit); // ★演習バトル：出題をこの単元の適応問題にし、習熟＋サイクルを更新
       setBattleKey((k) => k + 1);
     } else {
-      setBattleMonster(null); // 未解放／該当なし → 相手選択へ
+      setBattleMonster(null); setBattlePractice(null); // 未解放／該当なし → 相手選択へ
     }
     setScreen("battle");
   }
@@ -1346,7 +1372,7 @@ export default function App() {
         <BattleSelect
           player={data.player}
           clearedIds={clearedIds}
-          onSelect={(m) => { setBattleMonster(m); setBattleKey((k) => k + 1); }}
+          onSelect={(m) => { setBattleMonster(m); setBattlePractice(null); setBattleKey((k) => k + 1); }}
           onSeen={markMonstersSeen}
           onBack={() => setScreen("home")}
         />
@@ -1357,6 +1383,8 @@ export default function App() {
         key={battleKey}
         player={data.player}
         monster={battleMonster}
+        problemSource={battlePractice ? battleProblemSource(battlePractice) : null}
+        onAttempt={battlePractice ? recordStepAttempt : null}
         ally={(() => {
           const id = data.player.activePartner;
           const e = id ? data.player.partners?.[id] : null;

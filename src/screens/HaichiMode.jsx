@@ -68,7 +68,8 @@ export default function HaichiMode({ player, grade = 1, onSetGrade, onAttempt, o
           key={"haichi-" + key}
           player={player}
           units={units}
-          title={`練習：${lesson.t}`}
+          title={`確認問題：${lesson.t}`}
+          roundSize={5}
           passRate={PASS_RATE}
           onAttempt={onAttempt}
           onRoundEnd={({ correct, seen }) => { if (seen > 0 && (correct / seen) * 100 >= PASS_RATE) onPass?.(key); }}

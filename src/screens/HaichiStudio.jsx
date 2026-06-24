@@ -312,8 +312,8 @@ export default function HaichiStudio({ player, grade, section, lesson, watchedMa
             }}>
             <span style={{ fontSize: 32, lineHeight: 1 }}>{passed ? "🏅" : "📝"}</span>
             <span>
-              <span style={{ fontSize: 16, fontWeight: 900, display: "block" }}>{passed ? "合格済み！もう一度この動画の問題を解く" : "この動画の練習問題を解く"}</span>
-              <span style={{ fontSize: 11.5, fontWeight: 700, opacity: .92 }}>{passed ? "復習にもう一回チャレンジしてもOK" : "動画で学んだ内容にピッタリ合った問題で確かめよう"}</span>
+              <span style={{ fontSize: 16, fontWeight: 900, display: "block" }}>{passed ? "確認クリア済み！もう一度ためす" : "確認問題！これが解けたらOK（5問）"}</span>
+              <span style={{ fontSize: 11.5, fontWeight: 700, opacity: .92 }}>{passed ? "復習にもう一回チャレンジしてもOK" : "5問解けたらクリア！動画で学んだ内容の確認だよ"}</span>
             </span>
           </button>
         )}

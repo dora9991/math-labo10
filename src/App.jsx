@@ -1449,6 +1449,9 @@ export default function App() {
       onRelearn={() => setScreen("relearn")}
       onDialogue={() => setScreen("dialogue")}
       onHaichi={() => setScreen("haichi")}
+      onUnitHaichi={(unit) => openHaichiStudio(unit, "home")}
+      onUnitPractice={(chapter, unit) => { setSel({ chapter, unit, level: "easy" }); setScreen("anshin"); }}
+      onUnitBattle={(unit) => goBattleForUnit(unit)}
       onClinic={() => setScreen("clinic")}
       onUnitTest={() => { setUtChapter(null); setScreen("unitTest"); }}
       onStepUp={() => setScreen("stepUp")}

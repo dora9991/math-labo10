@@ -13,6 +13,7 @@ import CharBubble, { voice } from "../components/CharBubble.jsx";
 import { MathBackdrop } from "../components/Decorations.jsx";
 import Dashboard from "../components/Dashboard.jsx";
 import UnderstandingMap from "../components/UnderstandingMap.jsx";
+import UnitCycle from "../components/UnitCycle.jsx";
 import { findItem } from "../engine/items.js";
 import { gradesWithChapters } from "../data/index.js";
 
@@ -70,7 +71,7 @@ export default function Home({
   player, records, mistakeCount, grade = 1, onSetGrade,
   mode = "adventure", onSetMode, cycle = {}, restActive = false,
   canPrestige = false, prestige = 0, onPrestige,
-  onAnshin, onTimeAttack, onChallenge, onBattle, onRelearn, onDialogue, onHaichi,
+  onAnshin, onTimeAttack, onChallenge, onBattle, onRelearn, onDialogue, onHaichi, onUnitHaichi, onUnitPractice, onUnitBattle,
   onClinic, onUnitTest, onStepUp, onStartGolden, onShop, onSkill, onCollection, onPartners,
   onDetail, onHowTo, onCharacter,
 }) {
@@ -78,6 +79,7 @@ export default function Home({
   const [msg] = useState(() => voice("open"));
   const greeting = player.name ? `${player.name}、${msg}` : msg;
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const [cycleOpen, setCycleOpen] = useState(false);
   useEffect(() => { const id = setInterval(() => setNowMs(Date.now()), 20000); return () => clearInterval(id); }, []);
   const today = new Date().toLocaleDateString("ja-JP");
   const gActive = goldenActive(player, nowMs, today);
@@ -106,41 +108,8 @@ export default function Home({
       <MathBackdrop />
       <Header player={player} />
       <div className="content" style={{ position: "relative", zIndex: 1 }}>
-        {/* あいさつ吹き出し ＋ 右側にゴールデンタイム小ボタン */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <CharBubble text={greeting} avatar={player.avatar} onAvatar={onCharacter} />
-          </div>
-          {gActive ? (
-            <div style={{ flexShrink: 0, width: 104, whiteSpace: "nowrap", padding: "8px 6px", borderRadius: 12, textAlign: "center", lineHeight: 1.3,
-              background: "rgba(251,191,36,.18)", border: "1px solid rgba(251,191,36,.5)", color: "#fde047", fontWeight: 800, fontSize: 10.5 }}>
-              ✨XP1.2倍<br />あと{gMin}分
-            </div>
-          ) : !gStartedToday && onStartGolden ? (
-            <button onClick={onStartGolden} data-sfx="none" title="15分間 XP1.2倍"
-              style={{ flexShrink: 0, width: 104, whiteSpace: "nowrap", padding: "9px 6px", borderRadius: 12, cursor: "pointer", lineHeight: 1.3, textAlign: "center",
-                background: "linear-gradient(135deg,#fbbf24,#f59e0b)", border: "1px solid rgba(251,191,36,.6)", color: "#3a2a00", fontWeight: 900, fontSize: 11 }}>
-              ✨ゴールデン<br />タイム開始
-            </button>
-          ) : gEnded ? (
-            <div style={{ flexShrink: 0, width: 104, whiteSpace: "nowrap", padding: "8px 6px", borderRadius: 12, textAlign: "center", lineHeight: 1.3,
-              border: "1px solid rgba(255,255,255,.12)", color: "rgba(255,255,255,.4)", fontWeight: 700, fontSize: 10 }}>
-              ✨また<br />あした！
-            </div>
-          ) : null}
-        </div>
-
-        {/* 今日の曜日イベント */}
-        {ev && (
-          <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "0 0 11px", padding: "10px 13px", borderRadius: 12,
-            background: `linear-gradient(135deg, ${ev.color}22, ${ev.color}10)`, border: `1.5px solid ${ev.color}88` }}>
-            <span style={{ fontSize: 26, filter: `drop-shadow(0 0 6px ${ev.color})` }}>{ev.icon}</span>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 900, color: ev.color }}>今日は「{ev.label}」！</div>
-              <div style={{ fontSize: 11, color: "rgba(255,255,255,.65)" }}>{ev.desc}</div>
-            </div>
-          </div>
-        )}
+        {/* あいさつ吹き出し（ゴールデンタイム・曜日イベントは削除） */}
+        <CharBubble text={greeting} avatar={player.avatar} onAvatar={onCharacter} />
 
         {/* 休憩（日次逓減）バナー：やりすぎても旨くない＝そっと止める（§10 Step3） */}
         {restActive && (
@@ -177,6 +146,23 @@ export default function Home({
         {/* ===== ① ぼうけん（本線サイクル） ===== */}
         {tab === "adventure" && (
           <>
+            {/* 学習サイクル（押すと単元ごとのサイクルが開く＝§5） */}
+            <button data-sfx="none" onClick={() => setCycleOpen((v) => !v)} style={{
+              width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, flexWrap: "wrap",
+              margin: cycleOpen ? "0 0 10px" : "0 0 14px", padding: "10px 10px", borderRadius: 12, cursor: "pointer",
+              background: "rgba(99,102,241,.12)", border: "1px solid rgba(99,102,241,.35)", fontSize: 12, fontWeight: 800, color: "#c7d2fe",
+            }}>
+              <span>📚 学習サイクル</span><span style={{ opacity: .45 }}>｜</span>
+              <span>講義</span><span style={{ opacity: .55 }}>→</span>
+              <span>ためす</span><span style={{ opacity: .55 }}>→</span>
+              <span>なおす</span><span style={{ opacity: .55 }}>→</span>
+              <span style={{ opacity: .8 }}>（応用）</span>
+              <span style={{ marginLeft: 4, opacity: .85, fontWeight: 900 }}>{cycleOpen ? "▲ とじる" : "▼ 単元ごと"}</span>
+            </button>
+            {cycleOpen && (
+              <UnitCycle grade={grade} onHaichi={onUnitHaichi} onPractice={onUnitPractice} onBattle={onUnitBattle} onRelearn={onRelearn} onChallenge={onChallenge} />
+            )}
+
             {/* 王道サイクルの順に並べる：①講義 →②演習(れんしゅう/バトル) →③学び直し →④応用 */}
             {/* ① 講義 */}
             {sectionLabel("① まなぶ（講義）")}
@@ -194,9 +180,29 @@ export default function Home({
 
             {/* ② 演習：れんしゅう / バトル（えらべる・2列） */}
             {sectionLabel("② ためす（えらべる）")}
-            <div className="mode-grid" style={{ marginBottom: 14 }}>
-              {tool(onAnshin, "✏️", "れんしゅう", "時間きにせず・ヒントあり・安心", "linear-gradient(135deg,#22c55e,#10b981)")}
-              {tool(onBattle, "⚔️", "バトル", "時間制限で集中！緊張感", "linear-gradient(135deg,#ef4444,#b91c1c)")}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
+              <button data-sfx="none" onClick={onAnshin} style={{
+                padding: "14px 12px", borderRadius: 16, cursor: "pointer", textAlign: "left",
+                border: "2px solid rgba(255,255,255,.22)", color: "#fff", background: "linear-gradient(135deg,#22c55e,#10b981)",
+                display: "flex", alignItems: "center", gap: 10,
+              }}>
+                <span style={{ fontSize: 34, lineHeight: 1 }}>✏️</span>
+                <span style={{ minWidth: 0 }}>
+                  <span style={{ fontSize: 15, fontWeight: 900, display: "block" }}>れんしゅう</span>
+                  <span style={{ fontSize: 10.5, fontWeight: 700, opacity: .9, display: "block", lineHeight: 1.35 }}>時間きにせず・安心</span>
+                </span>
+              </button>
+              <button data-sfx="none" onClick={onBattle} style={{
+                padding: "14px 12px", borderRadius: 16, cursor: "pointer", textAlign: "left",
+                border: "2px solid rgba(255,255,255,.22)", color: "#fff", background: "linear-gradient(135deg,#ef4444,#b91c1c)",
+                display: "flex", alignItems: "center", gap: 10,
+              }}>
+                <span style={{ fontSize: 34, lineHeight: 1 }}>⚔️</span>
+                <span style={{ minWidth: 0 }}>
+                  <span style={{ fontSize: 15, fontWeight: 900, display: "block" }}>バトル</span>
+                  <span style={{ fontSize: 10.5, fontWeight: 700, opacity: .9, display: "block", lineHeight: 1.35 }}>時間制限で集中！</span>
+                </span>
+              </button>
             </div>
 
             {/* ③ 学び直し（間違いがある時。100%なら応用へ促す） */}

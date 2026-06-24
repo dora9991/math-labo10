@@ -1383,6 +1383,7 @@ export default function App() {
         key={battleKey}
         player={data.player}
         monster={battleMonster}
+        maxHearts={Math.min(13, 5 + new Set((data.records || []).filter((r) => r.mode === "battle" && r.extra?.result === "win" && /^boss_/.test(r.extra?.monsterId || "")).map((r) => r.extra.monsterId)).size)}
         problemSource={battlePractice ? battleProblemSource(battlePractice) : null}
         onAttempt={battlePractice ? recordStepAttempt : null}
         ally={(() => {

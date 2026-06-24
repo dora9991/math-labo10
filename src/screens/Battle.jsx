@@ -34,7 +34,7 @@ function genHardProblem(monster, lastId) {
   return genBattleProblem(monster, lastId, "oni") || genBattleProblem(monster, lastId, "advanced");
 }
 
-export default function Battle({ player, monster, ally = null, onResult, onSpChange, onItemUse, onUseBait, onHpChange, onWinBonus, onExit, onMistake, problemSource = null, onAttempt = null }) {
+export default function Battle({ player, monster, ally = null, onResult, onSpChange, onItemUse, onUseBait, onHpChange, onWinBonus, onExit, onMistake, problemSource = null, onAttempt = null, maxHearts = 5 }) {
   // problemSource: あれば出題をこの関数(lastId)→problemに差し替える＝「演習バトル」（仕様はStepUpと同一）
   // onAttempt: あれば1問ごとに {skill,unitId,level,ok,...} を通知＝習熟(Elo)＋サイクル進捗を更新
   const lv = playerLevel(player); // 現在ワールド（学年）のレベルでバトル能力が決まる
@@ -45,11 +45,11 @@ export default function Battle({ player, monster, ally = null, onResult, onSpCha
     const base = getPlayerBattleStats(lv, battleBonuses(player));
     const ratio = (lv + 10) / ((monster.minLv || 1) + 10);
     const timer = Math.max(1, Math.ceil(base.timer * ratio));
-    return { ...base, timer };
+    return { ...base, maxHp: maxHearts, timer }; // HP＝共通ハート（§15②：maxHp個のハート）
   })()).current;
 
   // バトル開始HP：前回の続き(currentHp)があればそこから。null=満タン。最低1。
-  const startHp = player.currentHp == null ? stats.maxHp : Math.max(1, Math.min(stats.maxHp, player.currentHp));
+  const startHp = stats.maxHp; // ハートは毎バトル満タン（共通HP・§15②）
   const [playerHp, setPlayerHp] = useState(startHp);
   const [monsterHp, setMonsterHp] = useState(monster.hp);
   const [q, setQ] = useState(() => (problemSource ? problemSource(null) : genBattleProblem(monster)));
@@ -476,7 +476,7 @@ export default function Battle({ player, monster, ally = null, onResult, onSpCha
     let scaled = rawDmg;
     if (monster.enrage && monsterHpRef.current <= monster.hp * 0.5) scaled = rawDmg * monster.enrage;
     // 1パン防止：1回の被ダメは最大HPの70%まで（満タンからの即死を避ける）
-    let dmg = Math.max(1, Math.min(Math.round(scaled), Math.ceil(stats.maxHp * 0.7)));
+    let dmg = 1; // 敵の1撃＝ハート1個（§15②：最初は5ミスで負け、ボス撃破でHP増）
 
     // 仲間が庇う：主人公HPが30%以下なら、生きている仲間がダメージを肩代わりする。
     //  庇う仲間は「主人公と同じダメージ＝敵の実ダメージ」をそのまま受ける。
@@ -732,9 +732,11 @@ export default function Battle({ player, monster, ally = null, onResult, onSpCha
       const newCombo = sealed ? 0 : combo + 1;
       setCombo(newCombo);
       changeSp(sp + 1); // 正解でSP+1（5でスキル1、10でスキル2）
-      // 強さ＝理解度（§13-8）：通常ダメージはレベル/ATK非依存。1正解＝敵HPの約1/10＝約10問で撃破。
-      //   コンボ3以上で少し上乗せ（連続正解のごほうび）。正負の数で調整中の新バランス。
-      const baseDmg = Math.max(1, Math.ceil(monster.hp / 10));
+      // 攻撃力＝その問題の単元の理解度（§15）：理解度0→10発・100→5発で撃破。レベル/ATK非依存＝強さ=理解度。
+      //   その単元を習熟するほど攻撃が上がる（属性的に単元ごと独立）。コンボ3以上で少し上乗せ。
+      const _um = (player.unitMastery && player.unitMastery[q.unitId]) || {};
+      const _hits = Math.max(5, Math.round(10 - 5 * ((_um.pt ?? 0) / 100))); // 10(理解度0) → 5(理解度100)
+      const baseDmg = Math.max(1, Math.ceil(monster.hp / _hits));
       let dmg = newCombo >= 3 ? Math.round(baseDmg * 1.3) : baseDmg;
       // 武器の特殊効果「会心」：3コンボ以上でさらに会心ボーナスを上乗せ
       if (specials.critPct > 0 && newCombo >= 3) dmg += Math.floor(stats.atk * specials.critPct);
@@ -954,9 +956,10 @@ export default function Battle({ player, monster, ally = null, onResult, onSpCha
         <div className="bt-panel bt-player">
           <Avatar avatar={player.avatar} size={30} />
           <span className="bt-player-name">{player.name ? player.name : "あなた"}（Lv.{lv}）</span>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#7fff7f", fontSize: 12 }}>
-            HP {Math.max(0, playerHp)}/{stats.maxHp}
-            <div className="bt-hp-track" style={{ width: 110 }}><div className="bt-hp-fill" style={{ width: plHpPct + "%", background: hpColor(plHpPct) }} /></div>
+          <div style={{ display: "flex", alignItems: "center", gap: 3, flexWrap: "wrap", fontSize: 14, lineHeight: 1.15 }} title={`ハート ${Math.max(0, playerHp)}/${stats.maxHp}`}>
+            {Array.from({ length: stats.maxHp }).map((_, i) => (
+              <span key={i} style={{ filter: i < Math.max(0, playerHp) ? "none" : "grayscale(1)", opacity: i < Math.max(0, playerHp) ? 1 : 0.35 }}>❤️</span>
+            ))}
           </div>
         </div>
 

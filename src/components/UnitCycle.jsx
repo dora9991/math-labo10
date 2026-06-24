@@ -7,8 +7,17 @@
 // ============================================================
 import { useState } from "react";
 import { chaptersForGrade } from "../data/index.js";
+import { findHaichiLessonForUnit } from "../data/haichiCourse.js";
 
-export default function UnitCycle({ grade = 1, onHaichi, onPractice, onBattle, onRelearn, onChallenge }) {
+// 講義（確認問題）をクリアしたか：その単元に対応する葉一レッスンの key を引いて
+//  haichiPassed（確認問題に合格した動画）に入っているかで判定する。
+function lectureCleared(unitId, haichiPassed) {
+  const found = findHaichiLessonForUnit(unitId);
+  if (!found) return false;
+  return !!haichiPassed[`g${found.grade}m${found.lesson.n}`];
+}
+
+export default function UnitCycle({ grade = 1, cycleMap = {}, haichiPassed = {}, onHaichi, onPractice, onBattle, onRelearn, onChallenge }) {
   const chapters = chaptersForGrade(grade);
   const [ci, setCi] = useState(0);
   const [tame, setTame] = useState(null); // ためす選択中の unitId
@@ -16,11 +25,17 @@ export default function UnitCycle({ grade = 1, onHaichi, onPractice, onBattle, o
   if (!ch) return null;
   const units = ch.units || [];
 
-  const stepBtn = (onClick, label, bg) => (
+  // cleared=true の時：黄色線で囲み、ボタン下に「✓クリア！」を出す（どこまで進んだか一目で）。
+  const stepBtn = (onClick, label, bg, cleared = false) => (
     <button data-sfx="none" onClick={onClick} style={{
       flex: 1, minWidth: 0, padding: "8px 4px", borderRadius: 9, cursor: "pointer", fontSize: 11, fontWeight: 800,
-      color: "#fff", border: "1px solid rgba(255,255,255,.18)", background: bg, lineHeight: 1.2,
-    }}>{label}</button>
+      color: "#fff", lineHeight: 1.2, background: bg,
+      border: cleared ? "2px solid #fde047" : "1px solid rgba(255,255,255,.18)",
+      boxShadow: cleared ? "0 0 0 2px rgba(253,224,71,.35)" : undefined,
+    }}>
+      <span style={{ display: "block" }}>{label}</span>
+      {cleared && <span style={{ display: "block", fontSize: 9, fontWeight: 900, color: "#fde047", marginTop: 2 }}>✓クリア！</span>}
+    </button>
   );
 
   return (
@@ -40,27 +55,34 @@ export default function UnitCycle({ grade = 1, onHaichi, onPractice, onBattle, o
 
       {/* 小単元ごとの行 */}
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {units.map((u) => (
+        {units.map((u) => {
+          const cyc = cycleMap[u.id] || {};
+          const lectureC = lectureCleared(u.id, haichiPassed);     // 講義＝確認問題に合格
+          const tameC = (cyc.practiceN || 0) >= 1;                 // ためす＝れんしゅう/バトルで正解
+          const naosuC = (cyc.relearnN || 0) >= 1;                 // なおす＝学び直しで正解
+          const ouyouC = (cyc.appliedN || 0) >= 1;                 // 応用＝応用問題で正解
+          return (
           <div key={u.id} style={{ background: "rgba(255,255,255,.04)", borderRadius: 11, padding: "8px 9px", border: "1px solid rgba(255,255,255,.1)" }}>
             <div style={{ fontSize: 12.5, fontWeight: 800, color: "#fff", marginBottom: 6, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
               {u.emoji ? u.emoji + " " : ""}{u.name}
             </div>
             {tame === u.id ? (
               <div style={{ display: "flex", gap: 6 }}>
-                {stepBtn(() => onPractice?.(ch, u), "✏️ れんしゅう", "linear-gradient(135deg,#22c55e,#10b981)")}
+                {stepBtn(() => onPractice?.(ch, u), "✏️ れんしゅう", "linear-gradient(135deg,#22c55e,#10b981)", tameC)}
                 {stepBtn(() => onBattle?.(u), "⚔️ バトル", "linear-gradient(135deg,#ef4444,#b91c1c)")}
                 {stepBtn(() => setTame(null), "← もどる", "rgba(255,255,255,.12)")}
               </div>
             ) : (
               <div style={{ display: "flex", gap: 6 }}>
-                {stepBtn(() => onHaichi?.(u), "📺 講義", "rgba(239,68,68,.5)")}
-                {stepBtn(() => setTame(u.id), "✏️ ためす", "rgba(34,197,94,.5)")}
-                {stepBtn(() => onRelearn?.(), "📖 なおす", "rgba(99,102,241,.5)")}
-                {stepBtn(() => onChallenge?.(), "🧮 応用", "rgba(139,92,246,.5)")}
+                {stepBtn(() => onHaichi?.(u), "📺 講義", "rgba(239,68,68,.5)", lectureC)}
+                {stepBtn(() => setTame(u.id), "✏️ ためす", "rgba(34,197,94,.5)", tameC)}
+                {stepBtn(() => onRelearn?.(), "📖 なおす", "rgba(99,102,241,.5)", naosuC)}
+                {stepBtn(() => onChallenge?.(), "🧮 応用", "rgba(139,92,246,.5)", ouyouC)}
               </div>
             )}
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

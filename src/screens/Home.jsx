@@ -12,6 +12,7 @@ import { goldenActive, goldenRemainMs, goldenEndedToday, todayEvent } from "../e
 import CharBubble, { voice } from "../components/CharBubble.jsx";
 import { MathBackdrop } from "../components/Decorations.jsx";
 import Dashboard from "../components/Dashboard.jsx";
+import UnderstandingMap from "../components/UnderstandingMap.jsx";
 import { findItem } from "../engine/items.js";
 import { gradesWithChapters } from "../data/index.js";
 
@@ -176,43 +177,56 @@ export default function Home({
         {/* ===== ① ぼうけん（本線サイクル） ===== */}
         {tab === "adventure" && (
           <>
-            {/* ▶ つづき＝きょうの1問（StepUp起動）。本線の主役ボタン。 */}
-            {onStepUp && (
-              <button data-sfx="none" onClick={onStepUp} style={{
-                width: "100%", marginBottom: 12, padding: "16px 18px", borderRadius: 18, cursor: "pointer", textAlign: "left",
-                border: "2px solid rgba(255,255,255,.3)", color: "#fff",
-                background: "linear-gradient(135deg,#6366f1,#8b5cf6)", boxShadow: "0 6px 20px rgba(99,102,241,.4)",
-                display: "flex", alignItems: "center", gap: 12,
-              }}>
-                <span style={{ fontSize: 40, lineHeight: 1 }}>🎯</span>
-                <span>
-                  <span style={{ fontSize: 19, fontWeight: 900, display: "block" }}>つづき（きょうの1問）</span>
-                  <span style={{ fontSize: 12.5, fontWeight: 700, opacity: .92 }}>きみに合わせた問題から！まよったらコレ</span>
-                </span>
-              </button>
-            )}
+            {/* 王道サイクルの順に並べる：①講義 →②演習(れんしゅう/バトル) →③学び直し →④応用 */}
+            {/* ① 講義 */}
+            {sectionLabel("① まなぶ（講義）")}
+            <button data-sfx="none" onClick={onHaichi} style={{
+              width: "100%", marginBottom: 14, padding: "14px 16px", borderRadius: 16, cursor: "pointer", textAlign: "left",
+              border: "2px solid rgba(255,255,255,.22)", color: "#fff", background: "linear-gradient(135deg,#ef4444,#f59e0b)",
+              display: "flex", alignItems: "center", gap: 12,
+            }}>
+              <span style={{ fontSize: 34, lineHeight: 1 }}>📺</span>
+              <span>
+                <span style={{ fontSize: 16, fontWeight: 900, display: "block" }}>はいちモード</span>
+                <span style={{ fontSize: 11.5, fontWeight: 700, opacity: .9 }}>葉一さんの授業 → 確認問題(5問)でOK</span>
+              </span>
+            </button>
 
-            <CycleMap cycle={cycle} />
-
-            {sectionLabel("わからない時は…（①講義）")}
-            <div className="mode-grid">
-              {tool(onHaichi, "📺", "はいちモード", "葉一さんの授業→確認", "linear-gradient(135deg,#ef4444,#f59e0b)")}
-              {onDialogue && tool(onDialogue, "🧑‍🏫", "AI対話", "先生と話して考える", "linear-gradient(135deg,#8b5cf6,#6366f1)")}
-              {tool(onAnshin, "🛟", "あんしんモード", "タイマーなし・誤答OK", "linear-gradient(135deg,#22c55e,#10b981)")}
+            {/* ② 演習：れんしゅう / バトル（えらべる・2列） */}
+            {sectionLabel("② ためす（えらべる）")}
+            <div className="mode-grid" style={{ marginBottom: 14 }}>
+              {tool(onAnshin, "✏️", "れんしゅう", "時間きにせず・ヒントあり・安心", "linear-gradient(135deg,#22c55e,#10b981)")}
+              {tool(onBattle, "⚔️", "バトル", "時間制限で集中！緊張感", "linear-gradient(135deg,#ef4444,#b91c1c)")}
             </div>
 
-            {sectionLabel("ためす（②演習 → ④応用）")}
-            <div className="mode-grid">
-              {tool(onTimeAttack, "⏱️", "タイムアタック", "時間内に何問解ける？")}
-              {tool(onChallenge, "🧮", "計算王への道", "連続正解に挑戦")}
-              {tool(onUnitTest, "📝", "単元テスト", "章のまとめ力だめし", "linear-gradient(135deg,#0ea5e9,#6366f1)")}
-              <button className="mode-card mut" onClick={onRelearn} style={{ position: "relative" }}>
-                {mistakeCount > 0 && <span className="nb-badge" style={{ position: "absolute", top: 8, right: 8 }}>{mistakeCount}</span>}
-                <span style={{ fontSize: 34 }}>📖</span>
-                <span style={{ fontSize: 14.5, fontWeight: 900 }}>学び直し</span>
-                <span style={{ fontSize: 10.5, opacity: 0.82, lineHeight: 1.45 }}>間違いを動画と練習で</span>
-              </button>
-            </div>
+            {/* ③ 学び直し（間違いがある時。100%なら応用へ促す） */}
+            {sectionLabel("③ なおす（学び直し）")}
+            <button data-sfx="none" onClick={onRelearn} style={{
+              width: "100%", marginBottom: 14, padding: "14px 16px", borderRadius: 16, cursor: "pointer", textAlign: "left", position: "relative",
+              border: "2px solid rgba(255,255,255,.22)", color: "#fff", background: "linear-gradient(135deg,#6366f1,#8b5cf6)",
+              display: "flex", alignItems: "center", gap: 12, opacity: mistakeCount > 0 ? 1 : 0.6,
+            }}>
+              {mistakeCount > 0 && <span className="nb-badge" style={{ position: "absolute", top: 8, right: 10 }}>{mistakeCount}</span>}
+              <span style={{ fontSize: 34, lineHeight: 1 }}>📖</span>
+              <span>
+                <span style={{ fontSize: 16, fontWeight: 900, display: "block" }}>学び直し</span>
+                <span style={{ fontSize: 11.5, fontWeight: 700, opacity: .9 }}>{mistakeCount > 0 ? "間違いを直して🟩に戻そう" : "間違いゼロ！直す所なし → 応用へ"}</span>
+              </span>
+            </button>
+
+            {/* ④ 応用 */}
+            {sectionLabel("④ ためす・上（応用）")}
+            <button data-sfx="none" onClick={onChallenge} style={{
+              width: "100%", padding: "14px 16px", borderRadius: 16, cursor: "pointer", textAlign: "left",
+              border: mistakeCount === 0 ? "2px solid rgba(251,191,36,.7)" : "2px solid rgba(255,255,255,.22)", color: "#fff",
+              background: "linear-gradient(135deg,#8b5cf6,#6366f1)", display: "flex", alignItems: "center", gap: 12,
+            }}>
+              <span style={{ fontSize: 34, lineHeight: 1 }}>🧮</span>
+              <span>
+                <span style={{ fontSize: 16, fontWeight: 900, display: "block" }}>応用問題にチャレンジ</span>
+                <span style={{ fontSize: 11.5, fontWeight: 700, opacity: .9 }}>{mistakeCount === 0 ? "全部できた！上をめざそう✨" : "もっと上へ。挑戦してみる？"}</span>
+              </span>
+            </button>
           </>
         )}
 
@@ -245,6 +259,7 @@ export default function Home({
         {/* ===== ③ きろく（学び直し＋学習の記録） ===== */}
         {tab === "record" && (
           <>
+            <UnderstandingMap player={player} grade={grade} onRelearn={onRelearn} />
             <button className="nb-btn" onClick={onRelearn} style={{ background: "linear-gradient(135deg,#6366f1,#8b5cf6)", color: "#fff", position: "relative", marginBottom: 10 }}>
               📖 学び直し（間違えた問題を動画と練習で克服）
               {mistakeCount > 0 && <span className="nb-badge" style={{ position: "absolute", top: 8, right: 10 }}>{mistakeCount}</span>}
